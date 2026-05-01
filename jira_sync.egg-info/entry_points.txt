@@ -1,0 +1,2 @@
+[console_scripts]
+jira-sync = jira_sync.sync:main

@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+jira_sync/__init__.py
+jira_sync/__main__.py
+jira_sync/client.py
+jira_sync/config.py
+jira_sync/sync.py
+jira_sync/syncer.py
+jira_sync.egg-info/PKG-INFO
+jira_sync.egg-info/SOURCES.txt
+jira_sync.egg-info/dependency_links.txt
+jira_sync.egg-info/entry_points.txt
+jira_sync.egg-info/requires.txt
+jira_sync.egg-info/top_level.txt

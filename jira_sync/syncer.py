@@ -1,0 +1,109 @@
+"""Core sync logic: fetch, filter, deduplicate, and sync comments."""
+
+import hashlib
+
+from . import client as cli
+
+
+def _body_fingerprint(body: str) -> str:
+    """Return a short hash of the first 100 chars of body for dedup."""
+    return hashlib.sha256(body[:100].encode()).hexdigest()[:16]
+
+
+def filter_comments(comments: list[dict], keywords: list[str]) -> list[dict]:
+    """Return comments whose body matches any keyword (case-insensitive)."""
+    if not keywords:
+        return comments
+    keywords_lower = [k.lower() for k in keywords]
+    result = []
+    for c in comments:
+        body_lower = c["body"].lower()
+        if any(kw in body_lower for kw in keywords_lower):
+            result.append(c)
+    return result
+
+
+def format_comment_for_sync(
+    comment: dict,
+    source_name: str = "Source",
+) -> str:
+    """Format a comment for posting to the target Jira with attribution."""
+    lines = [
+        f"[Synced from {source_name} Jira]",
+        f"Author: {comment['author_display']}",
+        f"Date: {comment['created']}",
+        "",
+        comment["body"],
+    ]
+    return "\n".join(lines)
+
+
+def get_existing_fingerprints(target_client: cli.JiraClient, target_key: str) -> set[str]:
+    """Return set of body fingerprints already in the target issue."""
+    existing = target_client.get_issue_comments(target_key)
+    return {_body_fingerprint(c["body"]) for c in existing}
+
+
+def sync_comments(
+    source_client: cli.JiraClient,
+    target_client: cli.JiraClient,
+    source_key: str,
+    target_key: str,
+    keywords: list[str] | None = None,
+    source_name: str = "Source",
+    dry_run: bool = False,
+) -> list[dict]:
+    """Fetch source comments, filter by keywords, and sync to target.
+
+    Returns the list of comments that would be / were synced.
+    """
+    print(f"Fetching comments from {source_key} ...")
+    source_comments = source_client.get_issue_comments(source_key)
+    print(f"  → {len(source_comments)} total comments")
+
+    filtered = filter_comments(source_comments, keywords or [])
+    print(f"  → {len(filtered)} comments match keyword filter")
+
+    if not filtered:
+        print("No matching comments to sync.")
+        return []
+
+    print(f"Fetching existing comments from {target_key} ...")
+    existing_fps = get_existing_fingerprints(target_client, target_key)
+    print(f"  → {len(existing_fps)} existing comments")
+
+    to_sync = []
+    for c in filtered:
+        formatted = format_comment_for_sync(c, source_name)
+        fp = _body_fingerprint(formatted)
+        if fp in existing_fps:
+            print(f"  ⏭  Skipping (duplicate): comment #{c['id']} by {c['author_display']}")
+        else:
+            to_sync.append(c)
+
+    if not to_sync:
+        print("All matching comments already exist in target. Nothing to sync.")
+        return []
+
+    print(f"\nComments to sync ({len(to_sync)}):")
+    for i, c in enumerate(to_sync, 1):
+        preview = c["body"][:120].replace("\n", " ")
+        print(f"  {i}. [{c['author_display']}] {preview}...")
+
+    if dry_run:
+        print("\n[Dry run] No comments were posted.")
+        return to_sync
+
+    print(f"\nSyncing {len(to_sync)} comments to {target_key} ...")
+    synced = []
+    for c in to_sync:
+        formatted = format_comment_for_sync(c, source_name)
+        try:
+            target_client.add_comment(target_key, formatted)
+            synced.append(c)
+            print(f"  ✓ Synced comment #{c['id']}")
+        except Exception as e:
+            print(f"  ✗ Failed to sync comment #{c['id']}: {e}")
+
+    print(f"\nDone! {len(synced)}/{len(to_sync)} comments synced.")
+    return synced
