@@ -1,6 +1,6 @@
 # Jira Sync User Manual
 
-Version 0.1.0
+Version 0.2.0
 
 ## Table of Contents
 
@@ -8,7 +8,7 @@ Version 0.1.0
 2. [Quick Start](#2-quick-start)
 3. [Installation](#3-installation)
 4. [Configuring Jira Connections](#4-configuring-jira-connections)
-5. [Syncing Comments](#5-syncing-comments)
+5. [Syncing Descriptions and Comments](#5-syncing-descriptions-and-comments)
 6. [Command Reference](#6-command-reference)
 7. [FAQ](#7-faq)
 8. [Appendix: Getting a Jira API Token](#8-appendix-getting-a-jira-api-token)
@@ -17,13 +17,13 @@ Version 0.1.0
 
 ## 1. Overview
 
-Jira Sync is a CLI tool for syncing ticket comments between two Jira Cloud instances. Typical use case:
+Jira Sync is a CLI tool for syncing ticket descriptions and comments between two Jira Cloud instances. Typical use case:
 
 - You collaborate with a customer on a ticket in your Jira
 - The customer has a corresponding ticket in their Jira instance
-- You need to sync relevant comments from your ticket to the customer's ticket
+- You need to sync the description and relevant comments from your ticket to the customer's ticket
 
-The tool handles authentication, comment fetching, keyword filtering, deduplication, formatting, and posting.
+The tool handles authentication, description/comment fetching, keyword filtering, deduplication, formatting, and posting.
 
 ### Glossary
 
@@ -64,13 +64,20 @@ jira-sync configure \
     --api-token yyyyyyyyyyyyyyyy
 ```
 
-### 2.3 Sync comments
+### 2.3 Sync descriptions and comments
 
 ```bash
+# Interactive sync (default: comments only)
 jira-sync sync
+
+# Sync description only
+jira-sync sync --item description
+
+# Sync both description and comments
+jira-sync sync --item both
 ```
 
-Follow the prompts to select connections, enter issue keys, and provide keywords.
+Follow the prompts to select connections, enter issue keys, choose what to sync, and provide keywords.
 
 ---
 
@@ -221,7 +228,7 @@ jira-sync delete --name customer
 
 ---
 
-## 5. Syncing Comments
+## 5. Syncing Descriptions and Comments
 
 ### 5.1 Basic workflow
 
@@ -234,24 +241,24 @@ The `sync` command is fully interactive. Here's the step-by-step flow:
 #### Step 1: Select Source Jira
 
 ```
-Select SOURCE Jira (where comments come from):
+Select SOURCE Jira (where data comes from):
   1. my       (https://my-company.atlassian.net)
   2. customer (https://customer.atlassian.net)
 Enter number:
 ```
 
-Pick the Jira connection that has the comments you want to sync.
+Pick the Jira connection that has the data you want to sync.
 
 #### Step 2: Select Target Jira
 
 ```
-Select TARGET Jira (where comments go to):
+Select TARGET Jira (where data goes to):
   1. my       (https://my-company.atlassian.net)
   2. customer (https://customer.atlassian.net)
 Enter number:
 ```
 
-Pick the Jira connection where comments should be posted.
+Pick the Jira connection where data should be written.
 
 #### Step 3: Enter issue keys
 
@@ -262,7 +269,30 @@ Target issue key: CUST-123
 
 Enter the source and target ticket IDs.
 
-#### Step 4: Enter filter keywords
+#### Step 4: Choose what to sync
+
+```
+What to sync?
+  1. Comments only
+  2. Description only
+  3. Both
+Enter number [1]:
+```
+
+Select the content type to sync:
+- **1 — Comments only**: Sync comments only (default)
+- **2 — Description only**: Sync the issue description only
+- **3 — Both**: Sync both description and comments
+
+You can also use `--item` to skip the interactive prompt:
+
+```bash
+jira-sync sync --item comments      # Comments only
+jira-sync sync --item description   # Description only
+jira-sync sync --item both          # Both
+```
+
+#### Step 5: Enter keywords (comments only)
 
 ```
 Filter keywords (comma-separated, leave empty for all): bug, error, urgent
@@ -270,44 +300,53 @@ Filter keywords (comma-separated, leave empty for all): bug, error, urgent
 
 Enter keywords separated by commas. Leave empty to sync all comments.
 
-#### Step 5: Confirm
+> Note: Keywords only apply to comments. Description sync is not affected by keywords.
+
+#### Step 6: Confirm
 
 ```
 ==================================================
 Sync Plan:
   Source:      my       →  SUP-456
   Target:      customer →  CUST-123
+  Sync:        comments
   Keywords:    bug, error, urgent
-  Mode:        Dry run
+  Mode:        Live
 ==================================================
 Proceed?
 ```
 
 Review the plan and type `y` to continue.
 
-#### Step 6: Results
+#### Step 7: Results
+
+When syncing both, descriptions are synced first, followed by comments.
+
+### 5.2 Syncing descriptions
+
+When syncing a description, the source issue's description replaces the target issue's description, with an attribution header added:
 
 ```
-Fetching comments from SUP-456 ...
-  → 12 total comments
-  → 4 comments match keyword filter
-Fetching existing comments from CUST-123 ...
-  → 3 existing comments
+[Synced from my Jira]
+Source: SUP-456 - Login page session expiry bug
 
-Comments to sync (3):
-  1. [Alice Wang] We found a bug in the login flow when the session expires...
-  2. [Bob Zhang] There's an error in the payment gateway timeout handling...
-  3. [Alice Wang] This is urgent for the release next week...
-
-Syncing 3 comments to CUST-123 ...
-  ✓ Synced comment #12345
-  ✓ Synced comment #12348
-  ✓ Synced comment #12352
-
-Done! 3/3 comments synced.
+<original description text>
 ```
 
-### 5.2 Dry-run mode
+**Dedup logic**: If the target's description already matches the source (fingerprint match), the sync is skipped.
+
+**Example output**:
+
+```
+Fetching description from SUP-456 ...
+  → Source: Login page session expiry bug
+  → Description: When the user session expires after 30 minutes, the login page...
+
+Fetching description from CUST-123 ...
+  ⏭  Description already synced (fingerprint match). Nothing to sync.
+```
+
+### 5.3 Dry-run mode
 
 Preview results without posting:
 
@@ -315,16 +354,11 @@ Preview results without posting:
 jira-sync sync --dry-run
 ```
 
-Dry-run executes the full flow up to confirmation and shows which comments would be synced, but never writes to the target Jira. Always dry-run before a real sync.
+Dry-run executes the full flow up to confirmation and shows what would be synced, but never writes to the target Jira. Always dry-run before a real sync.
 
-### 5.3 Keyword filter rules
+### 5.4 Syncing comments
 
-- **Case insensitive**: `Bug` and `bug` behave the same
-- **Multi-keyword OR logic**: `bug, error` matches comments containing **either** `bug` **or** `error`
-- **Partial match**: `pay` matches `payment`, `payroll`, `repay`, etc.
-- **Empty keywords**: Syncs all comments
-
-### 5.4 Sync format
+#### 5.4.1 Comment sync format
 
 Comments posted to the target Jira include a source attribution header:
 
@@ -336,7 +370,14 @@ Date: 2024-06-15T10:30:00.000+0800
 <original comment body>
 ```
 
-### 5.5 Deduplication
+#### 5.4.2 Keyword filter rules
+
+- **Case insensitive**: `Bug` and `bug` behave the same
+- **Multi-keyword OR logic**: `bug, error` matches comments containing **either** `bug` **or** `error`
+- **Partial match**: `pay` matches `payment`, `payroll`, `repay`, etc.
+- **Empty keywords**: Syncs all comments
+
+#### 5.4.3 Deduplication
 
 Running sync multiple times will not create duplicate comments. The dedup logic:
 
@@ -348,10 +389,10 @@ Running sync multiple times will not create duplicate comments. The dedup logic:
 ⏭  Skipping (duplicate): comment #12345 by Alice Wang
 ```
 
-### 5.6 Full example
+### 5.5 Full example (both description + comments)
 
 ```bash
-$ jira-sync sync --dry-run
+$ jira-sync sync --item both --dry-run
 
 Select SOURCE Jira:
   1. my
@@ -371,10 +412,19 @@ Filter keywords (comma-separated, leave empty for all): bug, error
 Sync Plan:
   Source:      my       →  SUP-456
   Target:      customer →  CUST-123
+  Sync:        both
   Keywords:    bug, error
   Mode:        Dry run
 ==================================================
 Proceed? [y/N]: y
+
+Fetching description from SUP-456 ...
+  → Source: Login page session expiry bug
+  → Description: When the user session expires after 30 minutes...
+
+Fetching description from CUST-123 ...
+
+[Dry run] Description would be updated on target.
 
 Fetching comments from SUP-456 ...
   → 12 total comments
@@ -422,12 +472,13 @@ jira-sync configure --name <name> --url <URL> --email <email> --api-token <token
 Execute sync.
 
 ```bash
-jira-sync sync [--dry-run]
+jira-sync sync [--dry-run] [--item <comments|description|both>]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--dry-run` | Preview only — no data is written |
+| `--item` | What to sync: `comments`, `description`, or `both`. Prompts if not specified |
 
 ### 6.4 list
 
@@ -485,7 +536,16 @@ requests.exceptions.HTTPError: 404 Client Error
 - Confirm the target account has "Add Comment" permission on the target ticket
 - Check if the target ticket is closed or restricted
 
-### 7.4 Duplicate comments
+### 7.4 Failed to sync description
+
+```
+✗ Failed to sync description: 403 Client Error
+```
+
+- Confirm the target account has "Edit Issue" permission on the target ticket
+- Check if the target ticket is closed or restricted
+
+### 7.5 Duplicate comments
 
 If dedup fails to catch a duplicate, possible reasons:
 
@@ -494,7 +554,7 @@ If dedup fails to catch a duplicate, possible reasons:
 
 This is expected behavior. Clean up extra comments manually in the target Jira.
 
-### 7.5 Lost configuration
+### 7.6 Lost configuration
 
 Config file location: `~/.jira-sync/config.json`. To migrate:
 
@@ -502,7 +562,7 @@ Config file location: `~/.jira-sync/config.json`. To migrate:
 2. Copy `~/.jira-sync/config.json` to the new machine
 3. Verify: `jira-sync list`
 
-### 7.6 Proxy configuration
+### 7.7 Proxy configuration
 
 Set environment variables if behind a corporate proxy:
 

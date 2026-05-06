@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: jira-sync
-Version: 0.1.0
-Summary: Cross-instance Jira comment sync tool
+Version: 0.2.0
+Summary: Cross-instance Jira sync tool — comments, descriptions, and inline images
 Requires-Python: >=3.10
 Requires-Dist: click>=8.0
 Requires-Dist: requests>=2.28

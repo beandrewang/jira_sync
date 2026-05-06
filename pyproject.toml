@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jira-sync"
-version = "0.1.0"
-description = "Cross-instance Jira comment sync tool"
+version = "0.2.0"
+description = "Cross-instance Jira sync tool — comments, descriptions, and inline images"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",

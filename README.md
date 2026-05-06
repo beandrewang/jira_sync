@@ -1,6 +1,6 @@
 # Jira Sync
 
-跨 Jira Cloud 实例的评论同步工具。支持在两个 Jira 项目之间，基于关键词筛选评论并同步。
+跨 Jira Cloud 实例的同步工具。支持在两个 Jira 项目之间同步工单描述、评论和**内嵌图片**（可关键词筛选评论）。
 
 纯 Python，全平台可用（Windows / macOS / Linux）。
 
@@ -63,24 +63,31 @@ jira-sync configure \
 | `--email` | Jira 账号邮箱 |
 | `--api-token` | [Jira API Token](https://id.atlassian.com/manage/api-tokens) |
 
-### 2. 同步评论
+### 2. 同步评论和描述
 
 ```bash
-# 交互式同步
+# 交互式同步（默认同步评论）
 jira-sync sync
 
+# 只同步描述
+jira-sync sync --item description
+
+# 评论和描述都同步
+jira-sync sync --item both
+
 # 先预览，不实际推送
-jira-sync sync --dry-run
+jira-sync sync --item both --dry-run
 ```
 
 同步流程：
 
-1. 选择 **Source Jira**（评论来源）
-2. 选择 **Target Jira**（评论目标）
+1. 选择 **Source Jira**（数据来源）
+2. 选择 **Target Jira**（数据目标）
 3. 输入 **Source Issue Key**（如 `PROJ-123`）
 4. 输入 **Target Issue Key**（如 `CUST-456`）
-5. 输入 **关键词**（逗号分隔，留空同步全部）
-6. 确认后执行
+5. 选择同步内容（评论 / 描述 / 两者都同步）
+6. 如果同步评论，输入**关键词**（逗号分隔，留空同步全部）
+7. 确认后执行
 
 ### 其他命令
 
@@ -104,9 +111,12 @@ jira-sync delete --name <名称>
 - **零额外依赖**（分发时）：pip 自动安装 `click` + `requests`
 - **Jira Cloud REST API v3**：使用 Basic Auth + API Token
 - **ADF 文本提取**：正确解析 Atlassian Document Format 中的纯文本
+- **评论 + 描述同步**：可只同步评论、只同步描述，或两者都同步
+- **图片附件同步**：评论和描述中的内嵌图片自动下载并上传到目标 Jira
+- **富文本保留**：文字格式（加粗、斜体、列表、代码块、表格、链接）完整保留
 - **自动去重**：基于内容指纹，避免重复推送
 - **Dry-run 模式**：先预览再执行
-- **来源标记**：同步的评论自动标注来源 Jira 名称、原始作者和时间
+- **来源标记**：同步的内容自动标注来源 Jira 名称、原始作者和时间
 
 ## 项目结构
 
@@ -119,7 +129,7 @@ jira_sync/
     ├── __main__.py          # python -m 支持
     ├── config.py            # 连接配置管理 (~/.jira-sync/config.json)
     ├── client.py            # Jira REST API 客户端
-    ├── syncer.py            # 同步核心逻辑 (过滤/去重/格式化)
+    ├── syncer.py            # 同步核心逻辑 (评论+描述, 过滤/去重/格式化)
     └── sync.py              # CLI 命令定义 (click)
 ```
 

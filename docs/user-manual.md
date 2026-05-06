@@ -1,6 +1,6 @@
 # Jira Sync 用户手册
 
-版本 0.1.0
+版本 0.2.0
 
 ## 目录
 
@@ -8,7 +8,7 @@
 2. [快速开始](#2-快速开始)
 3. [安装说明](#3-安装说明)
 4. [配置 Jira 连接](#4-配置-jira-连接)
-5. [同步评论](#5-同步评论)
+5. [同步描述和评论](#5-同步描述和评论)
 6. [命令参考](#6-命令参考)
 7. [常见问题](#7-常见问题)
 8. [附录：获取 Jira API Token](#8-附录获取-jira-api-token)
@@ -17,13 +17,13 @@
 
 ## 1. 概述
 
-Jira Sync 是一个命令行工具，用于在两个 Jira Cloud 实例之间同步工单评论。典型场景：
+Jira Sync 是一个命令行工具，用于在两个 Jira Cloud 实例之间同步工单描述和评论。典型场景：
 
 - 你方在 Jira 中与客户协作一个工单
 - 客户在另一个 Jira 实例中有对应的工单
-- 你需要把你方工单中与客户相关的评论同步过去
+- 你需要把你方工单的描述和评论同步到客户工单
 
-工具自动处理：认证、评论获取、关键词筛选、去重、格式化和推送。
+工具自动处理：认证、描述/评论获取、关键词筛选、去重、格式化和推送。
 
 ### 名词解释
 
@@ -64,13 +64,20 @@ jira-sync configure \
     --api-token yyyyyyyyyyyyyyyy
 ```
 
-### 2.3 同步评论
+### 2.3 同步描述和评论
 
 ```bash
+# 交互式同步（默认同步评论）
 jira-sync sync
+
+# 只同步描述
+jira-sync sync --item description
+
+# 同步描述和评论
+jira-sync sync --item both
 ```
 
-按提示选择连接、输入工单号和关键词即可。
+按提示选择连接、输入工单号、选择同步内容和关键词即可。
 
 ---
 
@@ -223,7 +230,7 @@ jira-sync delete --name customer
 
 ---
 
-## 5. 同步评论
+## 5. 同步描述和评论
 
 ### 5.1 基本流程
 
@@ -231,29 +238,29 @@ jira-sync delete --name customer
 jira-sync sync
 ```
 
-「jira-sync sync」是完全交互式的，按以下步骤执行：
+`jira-sync sync` 是完全交互式的，按以下步骤执行：
 
 #### 步骤 1：选择 Source Jira
 
 ```
-Select SOURCE Jira (where comments come from):
+Select SOURCE Jira (where data comes from):
   1. my       (https://my-company.atlassian.net)
   2. customer (https://customer.atlassian.net)
 Enter number:
 ```
 
-输入数字选择评论来源的 Jira 连接。
+输入数字选择数据来源的 Jira 连接。
 
 #### 步骤 2：选择 Target Jira
 
 ```
-Select TARGET Jira (where comments go to):
+Select TARGET Jira (where data goes to):
   1. my       (https://my-company.atlassian.net)
   2. customer (https://customer.atlassian.net)
 Enter number:
 ```
 
-输入数字选择评论目标的 Jira 连接。
+输入数字选择数据目标的 Jira 连接。
 
 #### 步骤 3：输入工单号
 
@@ -264,7 +271,30 @@ Target issue key: CUST-123
 
 分别输入来源工单和目标工单的编号。
 
-#### 步骤 4：输入关键词过滤
+#### 步骤 4：选择同步内容
+
+```
+What to sync?
+  1. Comments only
+  2. Description only
+  3. Both
+Enter number [1]:
+```
+
+选择要同步的内容类型：
+- **1 — Comments only**：只同步评论（默认）
+- **2 — Description only**：只同步描述
+- **3 — Both**：描述和评论都同步
+
+也可以通过 `--item` 选项直接指定，跳过交互式选择：
+
+```bash
+jira-sync sync --item comments      # 只同步评论
+jira-sync sync --item description   # 只同步描述
+jira-sync sync --item both          # 两者都同步
+```
+
+#### 步骤 5：输入关键词（仅同步评论时）
 
 ```
 Filter keywords (comma-separated, leave empty for all): bug, error, urgent
@@ -272,44 +302,53 @@ Filter keywords (comma-separated, leave empty for all): bug, error, urgent
 
 输入关键词，多个词用逗号分隔。留空则同步所有评论。
 
-#### 步骤 5：确认
+> 注意：关键词筛选仅对评论生效，描述同步不受关键词影响。
+
+#### 步骤 6：确认
 
 ```
 ==================================================
 Sync Plan:
   Source:      my       →  SUP-456
   Target:      customer →  CUST-123
+  Sync:        comments
   Keywords:    bug, error, urgent
-  Mode:        Dry run
+  Mode:        Live
 ==================================================
 Proceed?
 ```
 
 确认无误后输入 `y` 继续。
 
-#### 步骤 6：执行结果
+#### 步骤 7：执行结果
+
+如果选择了「两者都同步」，会先同步描述，再同步评论。
+
+### 5.2 同步描述
+
+同步工单描述时，会将源工单的描述替换到目标工单上，并添加来源标记：
 
 ```
-Fetching comments from SUP-456 ...
-  → 12 total comments
-  → 4 comments match keyword filter
-Fetching existing comments from CUST-123 ...
-  → 3 existing comments
+[Synced from my Jira]
+Source: SUP-456 - 登录页面会话过期 Bug
 
-Comments to sync (3):
-  1. [Alice Wang] We found a bug in the login flow when the session expires...
-  2. [Bob Zhang] There's an error in the payment gateway timeout handling...
-  3. [Alice Wang] This is urgent for the release next week...
-
-Syncing 3 comments to CUST-123 ...
-  ✓ Synced comment #12345
-  ✓ Synced comment #12348
-  ✓ Synced comment #12352
-
-Done! 3/3 comments synced.
+<原始描述内容>
 ```
 
-### 5.2 Dry-run 模式
+**去重逻辑**：如果目标工单的描述已经与源工单描述一致（指纹匹配），则跳过同步。
+
+**同步描述示例**：
+
+```
+Fetching description from SUP-456 ...
+  → Source: 登录页面会话过期 Bug
+  → Description: 当用户会话在 30 分钟后过期时，登录页面没有正确处理重定向...
+
+Fetching description from CUST-123 ...
+  ⏭  Description already synced (fingerprint match). Nothing to sync.
+```
+
+### 5.3 Dry-run 模式
 
 先预览结果，不实际推送：
 
@@ -317,16 +356,11 @@ Done! 3/3 comments synced.
 jira-sync sync --dry-run
 ```
 
-Dry-run 会完整执行到「确认」步骤，并显示有多少条评论会被推送、但不会实际调用 Jira API 写入。建议每次同步前先 dry-run 确认内容无误。
+Dry-run 会完整执行到「确认」步骤，并显示哪些内容会被同步、但不会实际调用 Jira API 写入。建议每次同步前先 dry-run 确认内容无误。
 
-### 5.3 关键词过滤规则
+### 5.4 同步评论
 
-- **大小写不敏感**：`Bug` 和 `bug` 效果相同
-- **多关键词 OR 逻辑**：`bug, error` 匹配包含 `bug` **或** `error` 的评论
-- **部分匹配**：`pay` 匹配包含 `payment`、`payroll`、`repay` 的评论
-- **空关键词**：同步所有评论
-
-### 5.4 同步格式
+#### 5.4.1 评论同步格式
 
 同步到目标 Jira 的评论会自动添加来源标记：
 
@@ -338,7 +372,14 @@ Date: 2024-06-15T10:30:00.000+0800
 <原始评论内容>
 ```
 
-### 5.5 去重机制
+#### 5.4.2 关键词过滤规则
+
+- **大小写不敏感**：`Bug` 和 `bug` 效果相同
+- **多关键词 OR 逻辑**：`bug, error` 匹配包含 `bug` **或** `error` 的评论
+- **部分匹配**：`pay` 匹配包含 `payment`、`payroll`、`repay` 的评论
+- **空关键词**：同步所有评论
+
+#### 5.4.3 去重机制
 
 如果多次运行同步，不会产生重复评论。去重逻辑：
 
@@ -350,10 +391,10 @@ Date: 2024-06-15T10:30:00.000+0800
 ⏭  Skipping (duplicate): comment #12345 by Alice Wang
 ```
 
-### 5.6 完整运行示例
+### 5.5 完整运行示例（同步评论 + 描述）
 
 ```bash
-$ jira-sync sync --dry-run
+$ jira-sync sync --item both --dry-run
 
 Select SOURCE Jira:
   1. my
@@ -373,10 +414,19 @@ Filter keywords (comma-separated, leave empty for all): bug, error
 Sync Plan:
   Source:      my       →  SUP-456
   Target:      customer →  CUST-123
+  Sync:        both
   Keywords:    bug, error
   Mode:        Dry run
 ==================================================
 Proceed? [y/N]: y
+
+Fetching description from SUP-456 ...
+  → Source: 登录页面会话过期 Bug
+  → Description: 当用户会话在 30 分钟后过期时...
+
+Fetching description from CUST-123 ...
+
+[Dry run] Description would be updated on target.
 
 Fetching comments from SUP-456 ...
   → 12 total comments
@@ -426,7 +476,7 @@ jira-sync configure --name <名称> --url <URL> --email <邮箱> --api-token <To
 执行同步。
 
 ```bash
-jira-sync sync [--dry-run]
+jira-sync sync [--dry-run] [--item <comments|description|both>]
 ```
 
 选项：
@@ -434,6 +484,7 @@ jira-sync sync [--dry-run]
 | 选项 | 说明 |
 |------|------|
 | `--dry-run` | 预览模式，不实际推送 |
+| `--item` | 同步内容类型：`comments`（评论）、`description`（描述）、`both`（两者）。不指定则交互式选择，默认为评论 |
 
 ### 6.4 list
 
@@ -493,7 +544,16 @@ requests.exceptions.HTTPError: 404 Client Error
 - 确认目标 Jira 账号对目标工单有 `添加评论` 权限
 - 确认目标工单没有被关闭或限制编辑
 
-### 7.4 重复评论
+### 7.4 同步描述失败
+
+```
+✗ Failed to sync description: 403 Client Error
+```
+
+- 确认目标 Jira 账号对目标工单有「编辑工单」权限
+- 确认目标工单没有被关闭或限制编辑
+
+### 7.5 重复评论
 
 如果去重失效，可能原因：
 
@@ -502,7 +562,7 @@ requests.exceptions.HTTPError: 404 Client Error
 
 这是预期行为。手动清理目标工单的多余评论即可。
 
-### 7.5 配置信息丢失
+### 7.6 配置信息丢失
 
 配置文件位于 `~/.jira-sync/config.json`。如需迁移到另一台机器：
 
@@ -510,7 +570,7 @@ requests.exceptions.HTTPError: 404 Client Error
 2. 复制 `~/.jira-sync/config.json` 到新机器同目录
 3. 验证：`jira-sync list`
 
-### 7.6 代理配置
+### 7.7 代理配置
 
 如果公司网络需要代理，通过环境变量配置：
 
