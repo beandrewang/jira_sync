@@ -1,4 +1,4 @@
-"""Core sync logic: fetch, filter, deduplicate, and sync comments."""
+"""Core sync logic: fetch, filter, deduplicate, and sync comments and descriptions."""
 
 import hashlib
 
@@ -42,6 +42,67 @@ def get_existing_fingerprints(target_client: cli.JiraClient, target_key: str) ->
     """Return set of body fingerprints already in the target issue."""
     existing = target_client.get_issue_comments(target_key)
     return {_body_fingerprint(c["body"]) for c in existing}
+
+
+def format_description_for_sync(
+    issue: dict,
+    source_key: str,
+    source_name: str = "Source",
+) -> str:
+    """Format an issue description for syncing with attribution header."""
+    lines = [
+        f"[Synced from {source_name} Jira]",
+        f"Source: {source_key} - {issue['summary']}",
+        "",
+        issue["description"],
+    ]
+    return "\n".join(lines)
+
+
+def sync_description(
+    source_client: cli.JiraClient,
+    target_client: cli.JiraClient,
+    source_key: str,
+    target_key: str,
+    source_name: str = "Source",
+    dry_run: bool = False,
+) -> bool:
+    """Sync issue description from source to target.
+
+    Returns True if the description was synced (or would be in dry-run).
+    """
+    print(f"Fetching description from {source_key} ...")
+    source_issue = source_client.get_issue(source_key)
+    if not source_issue["description"]:
+        print("  → Source issue has no description. Nothing to sync.")
+        return False
+
+    print(f"  → Source: {source_issue['summary']}")
+    print(f"  → Description: {source_issue['description'][:120]}...")
+
+    formatted = format_description_for_sync(source_issue, source_key, source_name)
+    source_fp = _body_fingerprint(formatted)
+
+    print(f"Fetching description from {target_key} ...")
+    target_issue = target_client.get_issue(target_key)
+    target_fp = _body_fingerprint(target_issue["description"]) if target_issue["description"] else ""
+
+    if source_fp == target_fp:
+        print("  ⏭  Description already synced (fingerprint match). Nothing to sync.")
+        return False
+
+    if dry_run:
+        print("\n[Dry run] Description would be updated on target.")
+        return True
+
+    print(f"\nUpdating description on {target_key} ...")
+    try:
+        target_client.update_issue_description(target_key, formatted)
+        print("  ✓ Description synced successfully.")
+        return True
+    except Exception as e:
+        print(f"  ✗ Failed to sync description: {e}")
+        return False
 
 
 def sync_comments(

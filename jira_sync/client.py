@@ -101,3 +101,36 @@ class JiraClient:
         resp = self._session.post(url, json=payload)
         resp.raise_for_status()
         return resp.json()
+
+    def get_issue(self, issue_key: str) -> dict:
+        """Return issue fields including description and summary.
+
+        Returns dict: {key, summary, description (plain text), description_adf}
+        """
+        url = f"{self.base_url}/rest/api/3/issue/{issue_key}"
+        resp = self._session.get(url, params={"fields": "description,summary"})
+        resp.raise_for_status()
+        data = resp.json()
+        fields = data.get("fields", {})
+        description_adf = fields.get("description") or {}
+        return {
+            "key": data.get("key", issue_key),
+            "summary": fields.get("summary", ""),
+            "description": extract_text_from_adf(description_adf).strip(),
+            "description_adf": description_adf,
+        }
+
+    def update_issue_description(self, issue_key: str, body: str):
+        """Update issue description (plain text wrapped in ADF)."""
+        url = f"{self.base_url}/rest/api/3/issue/{issue_key}"
+        payload = {"fields": {"description": {
+            "type": "doc",
+            "version": 1,
+            "content": [{
+                "type": "paragraph",
+                "content": [{"type": "text", "text": body}],
+            }],
+        }}}
+        resp = self._session.put(url, json=payload)
+        resp.raise_for_status()
+        return resp.json()

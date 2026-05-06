@@ -6,12 +6,12 @@ import click
 
 from . import config
 from .client import JiraClient
-from .syncer import sync_comments
+from .syncer import sync_comments, sync_description
 
 
 @click.group()
 def cli():
-    """Jira Sync Tool — sync comments between Jira instances."""
+    """Jira Sync Tool — sync comments and descriptions between Jira instances."""
 
 
 @cli.command()
@@ -64,8 +64,14 @@ def delete(name):
 
 @cli.command()
 @click.option("--dry-run", is_flag=True, help="Show what would be synced without posting")
-def sync(dry_run):
-    """Sync comments from source Jira to target Jira."""
+@click.option(
+    "--item",
+    type=click.Choice(["comments", "description", "both"]),
+    default=None,
+    help="What to sync (prompts if not specified)",
+)
+def sync(dry_run, item):
+    """Sync comments and/or description from source Jira to target Jira."""
     connections = config.list_connections()
     if len(connections) < 2:
         click.echo(
@@ -74,7 +80,7 @@ def sync(dry_run):
         sys.exit(1)
 
     # --- Select source connection ---
-    click.echo("\nSelect SOURCE Jira (where comments come from):")
+    click.echo("\nSelect SOURCE Jira (where data comes from):")
     for i, name in enumerate(connections, 1):
         conn = config.get_connection(name)
         click.echo(f"  {i}. {name}  ({conn['url']})")
@@ -85,7 +91,7 @@ def sync(dry_run):
     source_conn = config.get_connection(source_name)
 
     # --- Select target connection ---
-    click.echo("\nSelect TARGET Jira (where comments go to):")
+    click.echo("\nSelect TARGET Jira (where data goes to):")
     for i, name in enumerate(connections, 1):
         conn = config.get_connection(name)
         click.echo(f"  {i}. {name}  ({conn['url']})")
@@ -99,23 +105,41 @@ def sync(dry_run):
     source_key = click.prompt("Source issue key", type=str)
     target_key = click.prompt("Target issue key", type=str)
 
-    # --- Keywords ---
-    keywords_str = click.prompt(
-        "Filter keywords (comma-separated, leave empty for all)",
-        default="",
-    )
-    keywords = (
-        [kw.strip() for kw in keywords_str.split(",") if kw.strip()]
-        if keywords_str
-        else None
-    )
+    # --- What to sync ---
+    if item is None:
+        item_idx = click.prompt(
+            "\nWhat to sync?\n  1. Comments only\n  2. Description only\n  3. Both\n"
+            "Enter number",
+            type=click.IntRange(1, 3),
+            default=1,
+        )
+        item_map = {1: "comments", 2: "description", 3: "both"}
+        item = item_map[item_idx]
+
+    sync_comments_flag = item in ("comments", "both")
+    sync_desc_flag = item in ("description", "both")
+
+    # --- Keywords (only for comments) ---
+    keywords = None
+    if sync_comments_flag:
+        keywords_str = click.prompt(
+            "Filter keywords (comma-separated, leave empty for all)",
+            default="",
+        )
+        keywords = (
+            [kw.strip() for kw in keywords_str.split(",") if kw.strip()]
+            if keywords_str
+            else None
+        )
 
     # --- Confirm ---
     click.echo("\n" + "=" * 50)
     click.echo("Sync Plan:")
     click.echo(f"  Source:      {source_name}  →  {source_key}")
     click.echo(f"  Target:      {target_name}  →  {target_key}")
-    click.echo(f"  Keywords:    {', '.join(keywords) if keywords else '(all comments)'}")
+    click.echo(f"  Sync:        {item}")
+    if sync_comments_flag:
+        click.echo(f"  Keywords:    {', '.join(keywords) if keywords else '(all comments)'}")
     click.echo(f"  Mode:        {'Dry run' if dry_run else 'Live'}")
     click.echo("=" * 50)
     click.confirm("Proceed?", abort=True)
@@ -128,15 +152,26 @@ def sync(dry_run):
         target_conn["url"], target_conn["email"], target_conn["api_token"]
     )
 
-    sync_comments(
-        source_client=source_client,
-        target_client=target_client,
-        source_key=source_key,
-        target_key=target_key,
-        keywords=keywords,
-        source_name=source_name,
-        dry_run=dry_run,
-    )
+    if sync_desc_flag:
+        sync_description(
+            source_client=source_client,
+            target_client=target_client,
+            source_key=source_key,
+            target_key=target_key,
+            source_name=source_name,
+            dry_run=dry_run,
+        )
+
+    if sync_comments_flag:
+        sync_comments(
+            source_client=source_client,
+            target_client=target_client,
+            source_key=source_key,
+            target_key=target_key,
+            keywords=keywords,
+            source_name=source_name,
+            dry_run=dry_run,
+        )
 
 
 def main():
