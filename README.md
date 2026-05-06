@@ -1,6 +1,6 @@
 # Jira Sync
 
-跨 Jira Cloud 实例的同步工具。支持在两个 Jira 项目之间同步工单描述和评论（可关键词筛选）。
+跨 Jira Cloud 实例的同步工具。支持在两个 Jira 项目之间同步工单描述、评论和**内嵌图片**（可关键词筛选评论）。
 
 纯 Python，全平台可用（Windows / macOS / Linux）。
 
@@ -112,6 +112,8 @@ jira-sync delete --name <名称>
 - **Jira Cloud REST API v3**：使用 Basic Auth + API Token
 - **ADF 文本提取**：正确解析 Atlassian Document Format 中的纯文本
 - **评论 + 描述同步**：可只同步评论、只同步描述，或两者都同步
+- **图片附件同步**：评论和描述中的内嵌图片自动下载并上传到目标 Jira
+- **富文本保留**：文字格式（加粗、斜体、列表、代码块、表格、链接）完整保留
 - **自动去重**：基于内容指纹，避免重复推送
 - **Dry-run 模式**：先预览再执行
 - **来源标记**：同步的内容自动标注来源 Jira 名称、原始作者和时间

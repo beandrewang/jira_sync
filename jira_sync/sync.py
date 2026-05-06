@@ -64,13 +64,14 @@ def delete(name):
 
 @cli.command()
 @click.option("--dry-run", is_flag=True, help="Show what would be synced without posting")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed debug output")
 @click.option(
     "--item",
     type=click.Choice(["comments", "description", "both"]),
     default=None,
     help="What to sync (prompts if not specified)",
 )
-def sync(dry_run, item):
+def sync(dry_run, verbose, item):
     """Sync comments and/or description from source Jira to target Jira."""
     connections = config.list_connections()
     if len(connections) < 2:
@@ -160,6 +161,7 @@ def sync(dry_run, item):
             target_key=target_key,
             source_name=source_name,
             dry_run=dry_run,
+            verbose=verbose,
         )
 
     if sync_comments_flag:
@@ -171,6 +173,7 @@ def sync(dry_run, item):
             keywords=keywords,
             source_name=source_name,
             dry_run=dry_run,
+            verbose=verbose,
         )
 
 

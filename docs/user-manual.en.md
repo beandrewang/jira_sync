@@ -1,6 +1,6 @@
 # Jira Sync User Manual
 
-Version 0.1.0
+Version 0.2.0
 
 ## Table of Contents
 
