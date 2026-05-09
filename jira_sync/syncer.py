@@ -1,8 +1,40 @@
 """Core sync logic: fetch, filter, deduplicate, and sync comments and descriptions."""
 
 import hashlib
+import re
 
 from . import client as cli
+
+
+def _strip_keywords_from_text(text: str, keywords: list[str] | None) -> str:
+    """Remove keyword strings from text (case-insensitive, literal match)."""
+    if not keywords or not text:
+        return text
+    for kw in keywords:
+        text = re.sub(re.escape(kw), "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def _strip_keywords_from_adf(adf_node, keywords: list[str] | None):
+    """Walk ADF and remove [keyword] patterns from text nodes."""
+    if not keywords:
+        return adf_node
+    if isinstance(adf_node, dict):
+        if adf_node.get("type") == "text":
+            new_text = _strip_keywords_from_text(adf_node.get("text", ""), keywords)
+            if new_text != adf_node.get("text", ""):
+                node = dict(adf_node)
+                node["text"] = new_text
+                return node
+            return adf_node
+        if "content" in adf_node:
+            node = dict(adf_node)
+            node["content"] = _strip_keywords_from_adf(adf_node["content"], keywords)
+            return node
+        return adf_node
+    if isinstance(adf_node, list):
+        return [_strip_keywords_from_adf(n, keywords) for n in adf_node]
+    return adf_node
 
 
 def _body_fingerprint(body: str) -> str:
@@ -27,20 +59,38 @@ def format_comment_for_sync(
     comment: dict,
     source_name: str = "Source",
 ) -> str:
-    """Format a comment for posting to the target Jira with attribution."""
-    lines = [
-        f"[Synced from {source_name} Jira]",
-        f"Author: {comment['author_display']}",
-        f"Date: {comment['created']}",
-        comment["body"],
-    ]
-    return "\n".join(lines)
+    """Format a comment for posting to the target Jira."""
+    return comment["body"]
 
 
-def get_existing_fingerprints(target_client: cli.JiraClient, target_key: str) -> set[str]:
-    """Return set of body fingerprints already in the target issue."""
+def _normalize_body(body: str) -> str:
+    """Strip old-format attribution header for dedup consistency."""
+    if "[Synced from " in body and " Jira]" in body:
+        lines = body.split("\n")
+        # Skip attribution lines: [Synced from ...], Author:, Date:, Source:, blank
+        start = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(("[Synced from ", "Author: ", "Date: ", "Source: ")):
+                start = i + 1
+            elif stripped == "" and i == start:
+                start = i + 1
+            else:
+                break
+        body = "\n".join(lines[start:])
+    return body.strip()
+
+
+def get_existing_fingerprints(target_client: cli.JiraClient, target_key: str,
+                              keywords: list[str] | None = None) -> set[str]:
+    """Return fingerprints of existing comments, with old headers + keywords stripped."""
     existing = target_client.get_issue_comments(target_key)
-    return {_body_fingerprint(c["body"]) for c in existing}
+    return {
+        _body_fingerprint(
+            _strip_keywords_from_text(_normalize_body(c["body"]), keywords)
+        )
+        for c in existing
+    }
 
 
 def _collect_attachment_ids(adf_node) -> list[dict]:
@@ -132,15 +182,10 @@ def _build_comment_adf(
     media_id_mapping: dict[str, str] | None = None,
     target_content_id: str = "",
 ) -> dict:
-    """Build ADF body for a comment with attribution header prepended."""
-    header_nodes = [
-        cli.text_to_adf_paragraph(f"[Synced from {source_name} Jira]"),
-        cli.text_to_adf_paragraph(f"Author: {comment['author_display']}"),
-        cli.text_to_adf_paragraph(f"Date: {comment['created']}"),
-    ]
+    """Build ADF body for a comment with synced attachments."""
     original = comment.get("body_adf", {}).get("content", [])
     sanitized = cli.sanitize_adf_node(original, media_id_mapping, target_content_id)
-    return {"type": "doc", "version": 1, "content": header_nodes + sanitized}
+    return {"type": "doc", "version": 1, "content": sanitized}
 
 
 def _build_description_adf(
@@ -150,14 +195,10 @@ def _build_description_adf(
     media_id_mapping: dict[str, str] | None = None,
     target_content_id: str = "",
 ) -> dict:
-    """Build ADF body for a description with attribution header prepended."""
-    header_nodes = [
-        cli.text_to_adf_paragraph(f"[Synced from {source_name} Jira]"),
-        cli.text_to_adf_paragraph(f"Source: {source_key} - {issue['summary']}"),
-    ]
+    """Build ADF body for a description with synced attachments."""
     original = issue.get("description_adf", {}).get("content", [])
     sanitized = cli.sanitize_adf_node(original, media_id_mapping, target_content_id)
-    return {"type": "doc", "version": 1, "content": header_nodes + sanitized}
+    return {"type": "doc", "version": 1, "content": sanitized}
 
 
 def format_description_for_sync(
@@ -165,13 +206,8 @@ def format_description_for_sync(
     source_key: str,
     source_name: str = "Source",
 ) -> str:
-    """Format an issue description for syncing with attribution header."""
-    lines = [
-        f"[Synced from {source_name} Jira]",
-        f"Source: {source_key} - {issue['summary']}",
-        issue["description"],
-    ]
-    return "\n".join(lines)
+    """Format an issue description for syncing."""
+    return issue["description"]
 
 
 def sync_description(
@@ -248,10 +284,14 @@ def sync_comments(
         print("No matching comments to sync.")
         return []
 
-    existing_fps = get_existing_fingerprints(target_client, target_key)
+    existing_fps = get_existing_fingerprints(target_client, target_key, keywords)
 
     to_sync = []
     for c in filtered:
+        # Strip keyword tags from body before fingerprint + sync
+        if keywords:
+            c["body"] = _strip_keywords_from_text(c["body"], keywords)
+            c["body_adf"] = _strip_keywords_from_adf(c["body_adf"], keywords)
         formatted = format_comment_for_sync(c, source_name)
         fp = _body_fingerprint(formatted)
         if fp in existing_fps:
@@ -266,7 +306,7 @@ def sync_comments(
 
     print(f"\nComments to sync ({len(to_sync)}):")
     for i, c in enumerate(to_sync, 1):
-        preview = c["body"][:120].replace("\n", " ")
+        preview = c["body"][:120].replace("\n", " ").replace("  ", " ")
         print(f"  {i}. [{c['author_display']}] {preview}...")
 
     if dry_run:
