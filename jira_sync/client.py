@@ -104,14 +104,19 @@ def sanitize_adf_node(node, media_id_mapping=None, target_content_id=""):
         display = node.get("attrs", {}).get("text", "@unknown")
         return {"type": "text", "text": display}
 
-    # Replace extension / inlineCard with placeholder
+    # Replace extension / inlineExtension / inlineCard with text placeholders.
+    # These are typically inline nodes; replacing them with a paragraph would
+    # create nested paragraphs (invalid ADF) when they appear inside a paragraph.
     if node_type == "extension":
-        return text_to_adf_paragraph("[Embedded content]")
+        return {"type": "text", "text": "[Embedded content]"}
+
+    if node_type == "inlineExtension":
+        return {"type": "text", "text": "[Embedded content]"}
 
     if node_type == "inlineCard":
         url = node.get("attrs", {}).get("url", "")
         label = f"[Link: {url}]" if url else "[Embedded link]"
-        return text_to_adf_paragraph(label)
+        return {"type": "text", "text": label}
 
     # Pass through unchanged (only recursively process children)
     if "content" in node:
@@ -285,7 +290,8 @@ class JiraClient:
         if not resp.ok:
             detail = resp.text[:500] if resp.text else "(no body)"
             raise Exception(f"{resp.status_code} {resp.reason}: {detail}")
-        return resp.json()
+        # 204 No Content on success — no JSON body to parse
+        return resp.status_code
 
     def get_issue_attachments(self, issue_key: str) -> list[dict]:
         """Return all attachments on an issue.
